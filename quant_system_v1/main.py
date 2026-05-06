@@ -28,6 +28,9 @@ import strategy.board_strategy
 import strategy.shrink_volume
 import strategy.sector_rotation
 import strategy.ma_breakout_wrapper
+import strategy.first_board_strategy
+import strategy.dragon_rebound_strategy
+import strategy.broken_board_rebound_strategy
 
 logger = get_logger("main")
 

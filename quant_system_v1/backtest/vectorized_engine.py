@@ -83,7 +83,7 @@ class VectorizedBacktestEngine:
         self.codes = sorted(self.df['ts_code'].unique())
         self.dates = sorted(self.df['trade_date'].unique())
         self.close_matrix = self.df.pivot(index='trade_date', columns='ts_code', values='close')
-        self.volume_matrix = self.df.pivot(index='trade_date', columns='ts_code', values='volume')
+        self.volume_matrix = self.df.pivot(index='trade_date', columns='ts_code', values='vol')
         self.open_matrix = self.df.pivot(index='trade_date', columns='ts_code', values='open')
         for m in [self.close_matrix, self.volume_matrix, self.open_matrix]:
             if m is not None:
@@ -116,18 +116,21 @@ class VectorizedBacktestEngine:
         signals = strategy.generate_signals_vectorized(self.df)
         if signals.empty:
             signals = pd.DataFrame(0, index=self.dates, columns=self.codes)
-            for code in self.codes:
-                code_df = self.df[self.df['ts_code'] == code].set_index('trade_date')
-                for date in self.dates:
-                    if date not in code_df.index:
-                        continue
-                    row = code_df.loc[[date]]
-                    try:
-                        scored = strategy.run(row)
-                        if not scored.empty and scored.iloc[0].get('total_score', 0) >= 10:
-                            signals.loc[date, code] = 1
-                    except Exception:
-                        pass
+            # Batch per-date: filter+score all stocks at once per day (fast)
+            for date in self.dates:
+                day = self.df[self.df['trade_date'] == date]
+                if day.empty:
+                    continue
+                try:
+                    scored = strategy.run(day)
+                    if not scored.empty and 'ts_code' in scored.columns:
+                        for _, s in scored.iterrows():
+                            if s.get('total_score', 0) >= 10:
+                                code = s['ts_code']
+                                if code in signals.columns:
+                                    signals.loc[date, code] = 1
+                except Exception:
+                    pass
         valid_signals = signals * constraint_matrix.astype(int)
         cash = self.initial_capital
         positions: Dict[str, Dict] = {}
