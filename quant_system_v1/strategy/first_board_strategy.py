@@ -70,9 +70,9 @@ class FirstBoardStrategy(StrategyBase):
                 df.loc[mask, 'total_score'] += score
             except Exception:
                 continue
-        pass_score = 6
+        pass_score = 4
         actual_max = df['total_score'].max()
-        effective_pass = max(4, min(pass_score, actual_max * 0.5)) if actual_max > 0 else pass_score
+        effective_pass = max(2, min(pass_score, actual_max * 0.3)) if actual_max > 0 else pass_score
         df = df[df['total_score'] >= effective_pass]
         return df.sort_values('total_score', ascending=False).reset_index(drop=True)
 

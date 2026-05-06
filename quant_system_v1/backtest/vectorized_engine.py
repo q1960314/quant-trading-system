@@ -95,6 +95,22 @@ class VectorizedBacktestEngine:
         logger.info(f"Loaded {len(self.codes)} stocks x {len(self.dates)} days in {time.time()-t0:.1f}s")
         return self.df
 
+    def _precompute_factors(self):
+        """Pre-compute commonly needed factors to speed up strategy scoring."""
+        from factor_lib.registry import FactorRegistry
+        # Only compute price/volume/technical factors (fast, always available)
+        fast_factors = FactorRegistry.list_by_category('price') + \
+                       FactorRegistry.list_by_category('volume') + \
+                       FactorRegistry.list_by_category('technical')
+        fast_factors = [f for f in fast_factors if f in FactorRegistry._factors][:20]
+        try:
+            factor_df = FactorRegistry.compute(self.df, fast_factors)
+            for col in factor_df.columns:
+                if col not in self.df.columns:
+                    self.df[col] = factor_df[col]
+        except Exception:
+            pass
+
     def _merge_global_data(self, global_dir):
         """Merge stock_basic, limit_list_d, daily_basic, top_list into self.df."""
         if not os.path.isdir(global_dir):
@@ -167,6 +183,9 @@ class VectorizedBacktestEngine:
         # Deduplicate: keep last row per (ts_code, trade_date) to avoid pivot errors
         self.df = self.df.drop_duplicates(subset=['ts_code', 'trade_date'], keep='last')
 
+        # Pre-compute common factors for strategy scoring
+        self._precompute_factors()
+
     def build_constraint_matrix(self) -> pd.DataFrame:
         mask = pd.DataFrame(True, index=self.dates, columns=self.codes)
         for date in self.dates:
@@ -214,6 +233,9 @@ class VectorizedBacktestEngine:
                                     signals.loc[date, code] = 1
                 except Exception:
                     pass
+        # Align signals to constraint matrix dimensions
+        signals = signals.reindex(index=self.constraint_matrix.index,
+                                  columns=self.constraint_matrix.columns, fill_value=0)
         valid_signals = signals * self.constraint_matrix.astype(int)
         cash = self.initial_capital
         positions: Dict[str, Dict] = {}
@@ -246,11 +268,44 @@ class VectorizedBacktestEngine:
                         'profit': value - cost - positions[code]['cost_basis'],
                     })
                     del positions[code]
+            # Auto-sell: positions held beyond max_hold_days or hitting stop loss/profit
+            max_hold = 3  # default max hold days
+            stop_loss = 0.06
+            stop_profit = 0.12
+            expired = []
+            for code, pos in list(positions.items()):
+                if code in today_close.index and pd.notna(today_close[code]):
+                    pos['current_price'] = today_close[code]
+                    held_days = (date - pos['buy_date']).days
+                    pnl = (today_close[code] - pos['cost_basis'] / pos['shares']) / (pos['cost_basis'] / pos['shares'])
+                    # Stop loss / profit
+                    if pnl <= -stop_loss:
+                        expired.append((code, 'stop_loss'))
+                    elif pnl >= stop_profit:
+                        expired.append((code, 'stop_profit'))
+                    elif held_days >= max_hold:
+                        expired.append((code, 'max_hold'))
+            for code, reason in expired:
+                price = today_close.get(code, 0)
+                if pd.isna(price) or price <= 0:
+                    continue
+                slippage_price = price * (1 - self.slippage_rate)
+                value = positions[code]['shares'] * slippage_price
+                cost = max(value * self.commission_rate, self.min_commission)
+                cost += value * self.stamp_tax_rate
+                cash += value - cost
+                trades.append({
+                    'date': date, 'code': code, 'direction': 'sell',
+                    'price': slippage_price, 'shares': positions[code]['shares'],
+                    'profit': value - cost - positions[code]['cost_basis'],
+                    'reason': reason,
+                })
+                del positions[code]
             # Buy signals
             buy_codes = today_signal[today_signal == 1].index
             available_cash = cash * 0.95
             per_stock_cash = min(
-                available_cash / max(len(buy_codes), 1),
+                available_cash / max(self.max_hold_stocks, 1),
                 total_value * self.single_stock_ratio,
             )
             for code in buy_codes:

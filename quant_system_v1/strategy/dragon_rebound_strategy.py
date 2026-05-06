@@ -52,8 +52,8 @@ class DragonReboundStrategy(StrategyBase):
             return df
         # 缩量
         df = df[df['vol'] < df['_vol_5d_avg'] * 0.8]
-        # 反包信号：收盘高于前日最高
-        df['_is_rebound'] = (df['close'] > df['_high_prev']) & (df['_prev_close'] < df['_prev_close'])
+        # 反包信号：收盘高于前日最高，且开盘低于前日收盘(低开高走)
+        df['_is_rebound'] = (df['close'] > df['_high_prev']) & (df['open'] < df['_prev_close'])
         df = df[df['_is_rebound']]
         if df.empty:
             return df
@@ -75,9 +75,9 @@ class DragonReboundStrategy(StrategyBase):
                 df.loc[mask, 'total_score'] += score
             except Exception:
                 continue
-        pass_score = 8
+        pass_score = 6
         actual_max = df['total_score'].max()
-        effective_pass = max(5, min(pass_score, actual_max * 0.5)) if actual_max > 0 else pass_score
+        effective_pass = max(3, min(pass_score, actual_max * 0.3)) if actual_max > 0 else pass_score
         df = df[df['total_score'] >= effective_pass]
         return df.sort_values('total_score', ascending=False).reset_index(drop=True)
 

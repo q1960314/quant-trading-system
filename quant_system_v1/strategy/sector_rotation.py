@@ -55,7 +55,9 @@ class SectorRotationStrategy(StrategyBase):
             except Exception:
                 continue
 
-        df = df[df['total_score'] >= self.pass_score]
+        actual_max = df['total_score'].max()
+        effective_pass = max(3, min(self.pass_score, actual_max * 0.4)) if actual_max > 0 else self.pass_score
+        df = df[df['total_score'] >= effective_pass]
         return df.sort_values('total_score', ascending=False).reset_index(drop=True)
 
     def generate_signals_vectorized(self, df: 'pd.DataFrame') -> 'pd.DataFrame':

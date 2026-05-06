@@ -66,7 +66,7 @@ class MABreakoutWrapper(StrategyBase):
             scored = self.score(df)
             if scored.empty or 'total_score' not in scored.columns:
                 return pd.DataFrame()
-            scored['signal'] = (scored['total_score'] >= 10).astype(int)
+            scored['signal'] = (scored['total_score'] >= 5).astype(int)
             return scored.pivot_table(
                 index='trade_date', columns='ts_code', values='signal', fill_value=0
             ).astype(int)

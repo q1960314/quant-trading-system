@@ -28,7 +28,8 @@ class MLPredictor:
             lambda x: x.pct_change().shift(-1)
         )
         y = (df['_fwd_ret'] > 0).astype(int)
-        self.feature_names = X.columns.tolist()
+        if self.feature_names is None or len(self.feature_names) == 0:
+            self.feature_names = X.columns.tolist()
         return X, y
 
     def train(self, X, y, valid_frac=0.2):
@@ -57,7 +58,16 @@ class MLPredictor:
     def predict(self, X):
         if self.model is None:
             return pd.Series(0.5, index=X.index, name='ml_probability')
-        return pd.Series(self.model.predict_proba(X)[:, 1], index=X.index, name='ml_probability')
+        # Align features with training columns
+        X_aligned = pd.DataFrame(index=X.index)
+        for col in self.feature_names:
+            if col in X.columns:
+                X_aligned[col] = X[col]
+            else:
+                X_aligned[col] = 0.0
+        X_aligned = X_aligned.fillna(0)
+        return pd.Series(self.model.predict_proba(X_aligned)[:, 1], index=X.index,
+                         name='ml_probability')
 
     def save(self, version=None):
         if self.model is None:

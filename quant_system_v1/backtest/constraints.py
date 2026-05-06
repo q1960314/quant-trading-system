@@ -71,7 +71,7 @@ class SuspensionConstraint(BaseConstraint):
 class LiquidityConstraint(BaseConstraint):
     """Filter by minimum turnover amount and turnover rate."""
 
-    def __init__(self, min_amount=100000, min_turnover=3.0):
+    def __init__(self, min_amount=50000, min_turnover=0.5):
         self.min_amount = min_amount
         self.min_turnover = min_turnover
 
