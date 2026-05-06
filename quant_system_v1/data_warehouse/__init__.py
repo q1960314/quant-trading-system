@@ -1,0 +1,1 @@
+"""Data warehouse layer: DuckDB storage, cleaning, validation, versioning."""

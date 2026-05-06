@@ -1,0 +1,1 @@
+"""Analysis layer: costs, attribution, correlation, stress testing, competition, alpha decay."""
