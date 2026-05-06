@@ -31,6 +31,7 @@ import strategy.ma_breakout_wrapper
 import strategy.first_board_strategy
 import strategy.dragon_rebound_strategy
 import strategy.broken_board_rebound_strategy
+import strategy.ml_strategy
 
 logger = get_logger("main")
 
@@ -105,6 +106,41 @@ def cmd_pick(args):
     picker.pick(df_latest, trade_date)
 
 
+def cmd_evolve(args):
+    """自主进化"""
+    logger.info(f"Starting evolution mode: {args.mode}")
+    if args.mode in ('factors', 'full'):
+        logger.info("--- Factor Evolution ---")
+        from evolution.datasource_scanner import TushareAPIScanner
+        scanner = TushareAPIScanner()
+        scanner.scan()
+        code = scanner.export_candidates()
+        if code:
+            import os
+            out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                   'evolution_output', 'factors')
+            os.makedirs(out_dir, exist_ok=True)
+            with open(os.path.join(out_dir, 'auto_discovered_factors.py'), 'w', encoding='utf-8') as f:
+                f.write(code)
+            logger.info("Auto-discovered factors saved")
+    if args.mode in ('strategies', 'full'):
+        logger.info("--- Strategy Evolution ---")
+        from evolution.github_strategy_miner import GitHubSearcher, StrategyExtractor
+        searcher = GitHubSearcher()
+        repos = searcher.search()
+        searcher.clone_all()
+        extractor = StrategyExtractor()
+        for d in searcher.list_cloned():
+            strategies = extractor.extract_from_dir(os.path.join(searcher.sandbox_dir, d))
+            logger.info(f"  {d}: {len(strategies)} strategy classes found")
+    if args.mode in ('ml', 'full'):
+        logger.info("--- ML Evolution ---")
+        from ml.model_manager import ModelManager
+        mgr = ModelManager()
+        mgr.retrain(None, force=True)
+    logger.info("Evolution complete")
+
+
 def cmd_monitor(args):
     """实时监控"""
     from monitor.realtime import RealtimeMonitor
@@ -137,6 +173,11 @@ def main():
     p = sub.add_parser('pick', help='每日选股')
     p.add_argument('--strategy', help='策略名称')
 
+    # evolve
+    p = sub.add_parser('evolve', help='自主进化')
+    p.add_argument('--mode', choices=['factors', 'strategies', 'ml', 'full'], default='full',
+                   help='进化模式: factors/strategies/ml/full')
+
     # monitor
     p = sub.add_parser('monitor', help='实时监控')
     p.add_argument('--strategy', help='策略名称')
@@ -149,7 +190,7 @@ def main():
     print(f"  可用策略: {StrategyRegistry.list_all()}")
     print("=" * 60)
 
-    commands = {'fetch': cmd_fetch, 'backtest': cmd_backtest, 'pick': cmd_pick, 'monitor': cmd_monitor}
+    commands = {'fetch': cmd_fetch, 'backtest': cmd_backtest, 'pick': cmd_pick, 'monitor': cmd_monitor, 'evolve': cmd_evolve}
     if args.command in commands:
         commands[args.command](args)
     else:
