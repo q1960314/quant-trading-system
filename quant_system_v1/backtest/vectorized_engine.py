@@ -82,6 +82,10 @@ class VectorizedBacktestEngine:
         ]
         self.codes = sorted(self.df['ts_code'].unique())
         self.dates = sorted(self.df['trade_date'].unique())
+
+        # Merge global data (limit status, stock info, etc.) for strategy scoring
+        self._merge_global_data(global_dir)
+
         self.close_matrix = self.df.pivot(index='trade_date', columns='ts_code', values='close')
         self.volume_matrix = self.df.pivot(index='trade_date', columns='ts_code', values='vol')
         self.open_matrix = self.df.pivot(index='trade_date', columns='ts_code', values='open')
@@ -90,6 +94,78 @@ class VectorizedBacktestEngine:
                 m.ffill(inplace=True)
         logger.info(f"Loaded {len(self.codes)} stocks x {len(self.dates)} days in {time.time()-t0:.1f}s")
         return self.df
+
+    def _merge_global_data(self, global_dir):
+        """Merge stock_basic, limit_list_d, daily_basic, top_list into self.df."""
+        if not os.path.isdir(global_dir):
+            return
+
+        # Stock basic info (name, industry)
+        bp = os.path.join(global_dir, 'stock_basic.csv')
+        if os.path.exists(bp):
+            try:
+                basic = pd.read_csv(bp, dtype={'ts_code': str})
+                cols = ['ts_code'] + [c for c in ['name', 'industry', 'market'] if c in basic.columns]
+                self.df = self.df.merge(basic[cols], on='ts_code', how='left', suffixes=('','_basic'))
+            except Exception:
+                pass
+
+        # Daily basic (fundamental data: pe_ttm, pb, turnover_rate, circ_mv)
+        dbp = os.path.join(global_dir, 'daily_basic.csv')
+        if os.path.exists(dbp):
+            try:
+                basic_d = pd.read_csv(dbp, dtype={'ts_code': str, 'trade_date': str})
+                basic_d['trade_date'] = pd.to_datetime(basic_d['trade_date'])
+                cols = ['ts_code', 'trade_date'] + [c for c in ['turnover_rate', 'pe_ttm', 'pb', 'circ_mv', 'total_mv', 'volume_ratio'] if c in basic_d.columns]
+                self.df = self.df.merge(basic_d[cols], on=['ts_code', 'trade_date'], how='left', suffixes=('','_db'))
+            except Exception:
+                pass
+
+        # Limit list (board info: first_time, open_times, limit_times, limit status)
+        lp = os.path.join(global_dir, 'limit_list_d.csv')
+        if os.path.exists(lp):
+            try:
+                lim = pd.read_csv(lp, dtype={'ts_code': str, 'trade_date': str})
+                lim['trade_date'] = pd.to_datetime(lim['trade_date'])
+                rename = {}
+                if 'first_time' in lim.columns: rename['first_time'] = 'first_limit_time'
+                if 'open_times' in lim.columns: rename['open_times'] = 'break_limit_times'
+                if 'limit_times' in lim.columns: rename['limit_times'] = 'up_down_times'
+                if 'limit' in lim.columns: rename['limit'] = 'limit_status'
+                if 'float_mv' in lim.columns: rename['float_mv'] = 'float_market_cap'
+                if rename:
+                    lim = lim.rename(columns=rename)
+                cols = ['ts_code', 'trade_date'] + [c for c in rename.values() if c in lim.columns]
+                if 'limit_amount' in lim.columns and 'float_market_cap' in lim.columns:
+                    lim['order_amount'] = lim['limit_amount']
+                self.df = self.df.merge(lim[cols], on=['ts_code', 'trade_date'], how='left', suffixes=('','_lim'))
+            except Exception:
+                pass
+
+        # Top list (龙虎榜: net buy amount)
+        tp = os.path.join(global_dir, 'top_list.csv')
+        if os.path.exists(tp):
+            try:
+                top = pd.read_csv(tp, dtype={'ts_code': str, 'trade_date': str})
+                top['trade_date'] = pd.to_datetime(top['trade_date'])
+                cols = ['ts_code', 'trade_date'] + [c for c in ['net_amount', 'l_buy', 'l_sell'] if c in top.columns]
+                if cols:
+                    self.df = self.df.merge(top[cols], on=['ts_code', 'trade_date'], how='left', suffixes=('','_top'))
+            except Exception:
+                pass
+
+        # Fill missing critical columns
+        defaults = [
+            ('limit_status', 'N'), ('order_amount', 0), ('break_limit_times', 0),
+            ('up_down_times', 0), ('float_market_cap', 50), ('turnover_rate', 2),
+            ('net_amount', 0), ('pe_ttm', 20), ('pb', 2), ('volume_ratio', 1),
+            ('first_limit_time', '14:00'), ('inst_buy', 0), ('inst_sell', 0),
+        ]
+        for col, default in defaults:
+            if col not in self.df.columns:
+                self.df[col] = default
+        # Deduplicate: keep last row per (ts_code, trade_date) to avoid pivot errors
+        self.df = self.df.drop_duplicates(subset=['ts_code', 'trade_date'], keep='last')
 
     def build_constraint_matrix(self) -> pd.DataFrame:
         mask = pd.DataFrame(True, index=self.dates, columns=self.codes)
@@ -112,7 +188,14 @@ class VectorizedBacktestEngine:
         self.load_data()
         if self.df is None or self.df.empty:
             return BacktestResult(initial_capital=self.initial_capital)
-        constraint_matrix = self.build_constraint_matrix()
+        self.constraint_matrix = self.build_constraint_matrix()
+        return self._run_with_data(strategy)
+
+    def _run_with_data(self, strategy) -> BacktestResult:
+        if self.df is None or self.df.empty:
+            return BacktestResult(initial_capital=self.initial_capital)
+        if not hasattr(self, 'constraint_matrix') or self.constraint_matrix is None:
+            self.constraint_matrix = self.build_constraint_matrix()
         signals = strategy.generate_signals_vectorized(self.df)
         if signals.empty:
             signals = pd.DataFrame(0, index=self.dates, columns=self.codes)
@@ -131,7 +214,7 @@ class VectorizedBacktestEngine:
                                     signals.loc[date, code] = 1
                 except Exception:
                     pass
-        valid_signals = signals * constraint_matrix.astype(int)
+        valid_signals = signals * self.constraint_matrix.astype(int)
         cash = self.initial_capital
         positions: Dict[str, Dict] = {}
         trades: List[Dict] = []

@@ -43,15 +43,18 @@ class LimitUpDownConstraint(BaseConstraint):
         return limits
 
     def apply(self, df: pd.DataFrame) -> pd.Series:
+        """Limit-down stocks cannot be sold. Limit-up stocks are allowed
+        (execution happens T+1 via slippage model)."""
         if df.empty:
             return pd.Series(dtype=bool)
         preclose_col = 'pre_close' if 'pre_close' in df.columns else 'open'
         if preclose_col not in df.columns:
             return pd.Series(True, index=df.index)
         limits = self._detect_board(df['ts_code'])
-        limit_up_price = df[preclose_col] * (1 + limits)
-        at_limit_up = df['close'] >= limit_up_price
-        return ~at_limit_up
+        limit_down_price = df[preclose_col] * (1 - limits)
+        # Block only limit-down stocks (can't sell)
+        at_limit_down = df['close'] <= limit_down_price
+        return ~at_limit_down  # True = tradable
 
 
 class SuspensionConstraint(BaseConstraint):
@@ -60,7 +63,7 @@ class SuspensionConstraint(BaseConstraint):
     def apply(self, df: pd.DataFrame) -> pd.Series:
         if df.empty:
             return pd.Series(dtype=bool)
-        no_volume = (df.get('volume', 0) == 0)
+        no_volume = (df.get('vol', 0) == 0)
         no_amount = (df.get('amount', 0) == 0)
         return ~(no_volume | no_amount)
 
