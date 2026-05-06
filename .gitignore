@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# 数据文件（太大，不提交）
+data/
+data_all_stocks/
+*.csv
+*.xlsx
+*.png
+
+# 日志
+logs/
+*.log
+
+# 环境变量
+.env
+.env.local
+
+# API密钥文件
+*secret*
+*credential*
+
+# 记忆文件（含敏感信息）
+.memory/
+memory/
+
+# 临时文件
+*.tmp
+*.bak
+*.swp
+~$*
+
+# IDE
+.idea/
+.vscode/
+.trae/
+
+# 系统文件
+.DS_Store
+Thumbs.db
+NTUSER.*
