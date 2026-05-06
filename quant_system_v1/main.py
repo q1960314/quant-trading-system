@@ -27,6 +27,7 @@ from stock_picker import DailyStockPicker
 import strategy.board_strategy
 import strategy.shrink_volume
 import strategy.sector_rotation
+import strategy.ma_breakout_wrapper
 
 logger = get_logger("main")
 
