@@ -300,22 +300,23 @@ class DataFetcher:
     # ---- 指数 ----
     def _fetch_indices(self, s, e):
         logger.info("指数数据...")
+        from .tushare_source import TushareSource
+        ts = TushareSource()
         all_idx = []
-        for code in MAJOR_INDICES:
-            df = self.mgr._try('index_daily', code, s, e)
-            if df is not None and not df.empty:
-                df['ts_code'] = code
-                all_idx.append(df)
+        for code in tqdm(MAJOR_INDICES, desc="  指数日线", unit="个", ncols=80):
+            try:
+                df = ts._pro.index_daily(ts_code=code, start_date=s, end_date=e)
+                    df['ts_code'] = code
+                    all_idx.append(df)
+            except: pass
         if all_idx:
             pd.concat(all_idx).to_csv(os.path.join(LOCAL_GLOBAL_DIR,'index_daily.csv'), index=False, encoding='utf-8-sig')
             logger.info(f"  指数日线: {len(all_idx)}个")
 
         # index_dailybasic (估值)
         try:
-            from .tushare_source import TushareSource
-            ts = TushareSource()
-            basic = ts._call(ts._pro.index_dailybasic, trade_date=e)
-            if not basic.empty:
+            basic = ts._pro.index_dailybasic(trade_date=e)
+            if basic is not None and not basic.empty:
                 basic.to_csv(os.path.join(LOCAL_GLOBAL_DIR,'index_dailybasic.csv'), index=False, encoding='utf-8-sig')
                 logger.info(f"  指数估值: {len(basic)}条")
         except: pass
