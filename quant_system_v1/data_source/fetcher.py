@@ -5,6 +5,7 @@
 import os, time, threading, pandas as pd
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from tqdm import tqdm
 
 from utils.logger import get_logger
 from utils.calendar import TradeCalendar
@@ -160,10 +161,6 @@ class DataFetcher:
 
         with self._lock:
             self._completed += 1
-            if self._completed % 20 == 0:
-                daily_rows = sum(len(x) for x in self._daily_all if not x.empty)
-                print(f"  [{self._completed}/{self._total_days}] {daily_rows} daily rows", flush=True)
-
         return result
 
     def _fetch_stocks(self, codes, s, e):
@@ -181,8 +178,7 @@ class DataFetcher:
         days = pd.date_range(start_dt, end_dt, freq='B')
         total = len(days)
         eta_min = total * 12 // 120
-        print(f"  开始拉取: {total}天, 12接口/天, 2并发, 预计{eta_min}分钟", flush=True)
-        logger.info(f"按日批量拉取: {total}天 ({12}接口/天, 2并发)")
+        logger.info(f"按日批量拉取: {total}天 ({12}接口/天, 2并发, 预计{eta_min}分钟)")
 
         # Thread-safe accumulators
         self._daily_all, self._basic_all = [], []
@@ -200,6 +196,7 @@ class DataFetcher:
         from concurrent.futures import ThreadPoolExecutor, as_completed
         with ThreadPoolExecutor(max_workers=2) as executor:
             futures = [executor.submit(self._fetch_one_day, args) for args in args_list]
+            pbar = tqdm(total=total, desc="抓取进度", unit="天", ncols=80)
             for f in as_completed(futures):
                 try:
                     r = f.result()
@@ -211,7 +208,9 @@ class DataFetcher:
                                       ('mf_ind', self._mf_ind_all), ('mf_hsgt', self._mf_hsgt_all)]:
                         if key in r and not r[key].empty:
                             lst.append(r[key])
+                    pbar.update(1)
                 except: pass
+            pbar.close()
 
         # Rename for downstream processing
         daily_all, basic_all = self._daily_all, self._basic_all
