@@ -153,34 +153,29 @@ class DataFetcher:
         logger.info(f"按日批量拉取: {total}个交易日 ({12}接口/日, 约{total*12//120}分钟)")
         for i, dt in enumerate(days):
             ds = dt.strftime('%Y%m%d')
-            # 12 calls/iter already spaces naturally within 120/min limit
-            # P0: 日线 + 基本面 + 涨跌停价
-            dd = self._call_with_retry(ts_src, 'daily', trade_date=ds)
-            if not dd.empty: daily_all.append(dd)
+            # P0-P2: 12每日接口，间隔0.5s = 120次/分钟
+            dd = self._call_silent(ts_src, 'daily', trade_date=ds)
+            if not dd.empty: daily_all.append(dd); time.sleep(0.5)
             db = self._call_silent(ts_src, 'daily_basic', trade_date=ds)
-            if not db.empty: basic_all.append(db)
+            if not db.empty: basic_all.append(db); time.sleep(0.5)
             sl = self._call_silent(ts_src, 'stk_limit', trade_date=ds)
-            if not sl.empty: sl['trade_date'] = ds; stk_limit_all.append(sl)
-
-            # P1: 涨停列表 + 龙虎榜 + 游资 + 热榜
+            if not sl.empty: sl['trade_date'] = ds; stk_limit_all.append(sl); time.sleep(0.5)
             ld = self._call_silent(ts_src, 'limit_list_d', trade_date=ds)
-            if not ld.empty: ld['trade_date'] = ds; limit_d_all.append(ld)
+            if not ld.empty: ld['trade_date'] = ds; limit_d_all.append(ld); time.sleep(0.5)
             ls = self._call_silent(ts_src, 'limit_step', trade_date=ds)
-            if not ls.empty: ls['trade_date'] = ds; limit_step_all.append(ls)
+            if not ls.empty: ls['trade_date'] = ds; limit_step_all.append(ls); time.sleep(0.5)
             tl = self._call_silent(ts_src, 'top_list', trade_date=ds)
-            if not tl.empty: tl['trade_date'] = ds; top_all.append(tl)
+            if not tl.empty: tl['trade_date'] = ds; top_all.append(tl); time.sleep(0.5)
             ti = self._call_silent(ts_src, 'top_inst', trade_date=ds)
-            if not ti.empty: ti['trade_date'] = ds; top_inst_all.append(ti)
+            if not ti.empty: ti['trade_date'] = ds; top_inst_all.append(ti); time.sleep(0.5)
             hm = self._call_silent(ts_src, 'hm_detail', trade_date=ds)
-            if not hm.empty: hm['trade_date'] = ds; hm_all.append(hm)
+            if not hm.empty: hm['trade_date'] = ds; hm_all.append(hm); time.sleep(0.5)
             hot = self._call_silent(ts_src, 'ths_hot', trade_date=ds)
-            if not hot.empty: hot['trade_date'] = ds; hot_all.append(hot)
-
-            # P2: 资金流向
+            if not hot.empty: hot['trade_date'] = ds; hot_all.append(hot); time.sleep(0.5)
             mc = self._call_silent(ts_src, 'moneyflow_cnt_ths', trade_date=ds)
-            if not mc.empty: mc['trade_date'] = ds; mf_cnt_all.append(mc)
+            if not mc.empty: mc['trade_date'] = ds; mf_cnt_all.append(mc); time.sleep(0.5)
             mi = self._call_silent(ts_src, 'moneyflow_ind_ths', trade_date=ds)
-            if not mi.empty: mi['trade_date'] = ds; mf_ind_all.append(mi)
+            if not mi.empty: mi['trade_date'] = ds; mf_ind_all.append(mi); time.sleep(0.5)
             mh = self._call_silent(ts_src, 'moneyflow_hsgt', trade_date=ds)
             if not mh.empty: mh['trade_date'] = ds; mf_hsgt_all.append(mh)
 
