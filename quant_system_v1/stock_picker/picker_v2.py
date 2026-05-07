@@ -30,7 +30,19 @@ class DailyStockPickerV2:
 
     def get_latest_data(self, trade_date=None):
         if trade_date is None:
-            trade_date = self.cal.prev_trade_day()
+            # Use the latest date actually available in data
+            latest_file = os.path.join(LOCAL_GLOBAL_DIR, 'daily.csv')
+            if os.path.exists(latest_file):
+                try:
+                    import pandas as pd
+                    tmp = pd.read_csv(latest_file, nrows=1, dtype={'trade_date': str})
+                    if 'trade_date' in tmp.columns and len(tmp) > 0:
+                        date_str = str(tmp['trade_date'].iloc[0])
+                        trade_date = pd.Timestamp(date_str)
+                except Exception:
+                    trade_date = self.cal.prev_trade_day()
+            else:
+                trade_date = self.cal.prev_trade_day()
         date_str = trade_date.strftime('%Y%m%d')
         logger.info(f"加载数据: {trade_date}")
         all_data = []
