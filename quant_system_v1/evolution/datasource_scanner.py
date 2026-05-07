@@ -41,7 +41,11 @@ class TushareAPIScanner:
 
     def test_interface(self, api_name):
         try:
-            df = self.mgr.call_api(api_name, start_date=SCAN_START, end_date=SCAN_END)
+            pro = self.mgr.sources[0]._pro if self.mgr.sources else None
+            if pro is None: return {'api':api_name,'status':'FAILED','error':'no source','new_columns':[]}
+            fn = getattr(pro, api_name, None)
+            if fn is None: return {'api':api_name,'status':'FAILED','error':'not a method','new_columns':[]}
+            df = fn(ts_code='000001.SZ', start_date=SCAN_START.replace('-',''), end_date=SCAN_END.replace('-',''))
             if df is not None and not df.empty:
                 numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
                 return {
