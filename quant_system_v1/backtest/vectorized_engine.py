@@ -183,6 +183,11 @@ class VectorizedBacktestEngine:
         # Deduplicate: keep last row per (ts_code, trade_date) to avoid pivot errors
         self.df = self.df.drop_duplicates(subset=['ts_code', 'trade_date'], keep='last')
 
+        # Normalize units: convert 元 to 亿 for market cap columns
+        for col in ['float_market_cap', 'total_mv', 'circ_mv']:
+            if col in self.df.columns and self.df[col].max() > 1e10:
+                self.df[col] = self.df[col] / 1e8
+
         # Pre-compute common factors for strategy scoring
         self._precompute_factors()
 

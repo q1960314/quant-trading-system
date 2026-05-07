@@ -23,7 +23,8 @@ class FirstBoardStrategy(StrategyBase):
             df = df[df['pct_chg'] >= 9.5]
         if df.empty: return df
         if 'float_market_cap' in df.columns:
-            df = df[(df['float_market_cap'] >= 10) & (df['float_market_cap'] <= 500)]
+            fmc = df['float_market_cap']
+            df = df[(fmc >= 10) & (fmc <= 500)]
         return df.reset_index(drop=True)
 
     def score(self, df):
@@ -31,13 +32,15 @@ class FirstBoardStrategy(StrategyBase):
         df = df.copy()
         df['total_score'] = 3  # Base score for being limit-up
         if 'first_limit_time' in df.columns:
-            times = df['first_limit_time'].astype(str)
-            df.loc[times <= '10:00', 'total_score'] += 5
-            df.loc[(times > '10:00') & (times <= '10:30'), 'total_score'] += 3
+            # first_limit_time is HHMMSS integer (e.g., 92500 = 09:25:00)
+            times = pd.to_numeric(df['first_limit_time'], errors='coerce').fillna(140000)
+            df.loc[times <= 100000, 'total_score'] += 5  # Before 10:00
+            df.loc[(times > 100000) & (times <= 103000), 'total_score'] += 3  # 10:00-10:30
         if 'turnover_rate' in df.columns:
             df.loc[(df['turnover_rate'] >= 3) & (df['turnover_rate'] <= 20), 'total_score'] += 3
         if 'float_market_cap' in df.columns:
-            df.loc[(df['float_market_cap'] >= 20) & (df['float_market_cap'] <= 200), 'total_score'] += 2
+            fmc = df['float_market_cap']
+            df.loc[(fmc >= 20) & (fmc <= 200), 'total_score'] += 2
         if 'break_limit_times' in df.columns:
             df.loc[df['break_limit_times'] == 0, 'total_score'] += 3
         if 'up_down_times' in df.columns:
