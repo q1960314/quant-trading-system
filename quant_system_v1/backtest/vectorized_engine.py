@@ -56,9 +56,17 @@ class VectorizedBacktestEngine:
         self.volume_matrix = None
         self.open_matrix = None
 
-    def load_data(self, data_dir="../data_all_stocks", global_dir="../data"):
+    def load_data(self, data_dir="../data_all_stocks", global_dir="../data", use_duckdb=True):
         logger.info("Loading data for vectorized backtest...")
         t0 = time.time()
+
+        # DuckDB fast path
+        if use_duckdb:
+            db_path = os.path.join(global_dir, 'quant.duckdb')
+            if os.path.exists(db_path):
+                return self._load_data_duckdb(db_path)
+
+        # CSV fallback path
         frames = []
         if os.path.isdir(data_dir):
             for d in os.listdir(data_dir):
@@ -93,6 +101,45 @@ class VectorizedBacktestEngine:
             if m is not None:
                 m.ffill(inplace=True)
         logger.info(f"Loaded {len(self.codes)} stocks x {len(self.dates)} days in {time.time()-t0:.1f}s")
+        return self.df
+
+    def _load_data_duckdb(self, db_path):
+        """Load backtest data directly from DuckDB — single SQL query with all JOINs."""
+        import duckdb
+        conn = duckdb.connect(db_path)
+        # Build one big query joining all relevant tables
+        self.df = conn.execute(f"""
+            SELECT d.*, sb.name, sb.industry,
+                   db.turnover_rate, db.pe_ttm, db.pb, db.circ_mv, db.total_mv, db.volume_ratio,
+                   lim.first_time AS first_limit_time, lim.open_times AS break_limit_times,
+                   lim.limit_times AS up_down_times, lim.limit AS limit_status,
+                   lim.limit_amount AS order_amount, lim.float_mv AS float_market_cap,
+                   top.net_amount
+            FROM daily d
+            LEFT JOIN stock_basic sb ON d.ts_code = sb.ts_code
+            LEFT JOIN daily_basic db ON d.ts_code = db.ts_code AND d.trade_date = db.trade_date
+            LEFT JOIN limit_list_d lim ON d.ts_code = lim.ts_code AND d.trade_date = lim.trade_date
+            LEFT JOIN top_list top ON d.ts_code = top.ts_code AND d.trade_date = top.trade_date
+            WHERE d.trade_date BETWEEN '{self.start_date.strftime('%Y-%m-%d')}'
+              AND '{self.end_date.strftime('%Y-%m-%d')}'
+            ORDER BY d.trade_date, d.ts_code
+        """).df()
+        conn.close()
+        self.df['trade_date'] = pd.to_datetime(self.df['trade_date'])
+        self.codes = sorted(self.df['ts_code'].unique())
+        self.dates = sorted(self.df['trade_date'].unique())
+        for col, default in [('limit_status','N'),('order_amount',0),('break_limit_times',0),
+                              ('up_down_times',0),('float_market_cap',50),('turnover_rate',2),
+                              ('net_amount',0),('first_limit_time','14:00')]:
+            if col not in self.df.columns: self.df[col] = default
+        self.df = self.df.drop_duplicates(subset=['ts_code','trade_date'], keep='last')
+        for col in ['float_market_cap','total_mv','circ_mv']:
+            if col in self.df.columns and self.df[col].max() > 1e10:
+                self.df[col] = self.df[col] / 1e8
+        self._precompute_factors()
+        self.close_matrix = self.df.pivot(index='trade_date', columns='ts_code', values='close')
+        if self.close_matrix is not None: self.close_matrix.ffill(inplace=True)
+        logger.info(f"DuckDB: {len(self.codes)} stocks x {len(self.dates)} days")
         return self.df
 
     def _precompute_factors(self):
