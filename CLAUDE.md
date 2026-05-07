@@ -1,67 +1,39 @@
-# 量化交易系统 — 项目上下文
+# 量化交易系统 v4 — 项目上下文
 
-## 项目概况
-- 量化交易系统 v1，A股短线策略（2-3天持股周期）
-- 盈亏比 1:2，最长持仓 3 天
-- 第三方 Tushare 接口: token=`123396cf48bacd87370d4541fe4c2c51bcacb43f32f66890650dd5bb907a`, api=`http://jiaoch.site`
-- Python 路径: `C:\Users\Administrator\AppData\Local\Programs\Python\Python311\python.exe`
-
-## 目录结构
-```
-F:\编程文件\
-├── quant_system_v1/          # 主项目（模块化架构）
-│   ├── main.py               # CLI入口: fetch/backtest/pick/monitor
-│   ├── config/               # settings.py + strategy_config.py
-│   ├── data_source/          # 多源降级: Tushare→AKShare→东财→Baostock
-│   ├── backtest/engine.py    # 事件驱动回测
-│   ├── strategy/             # 3个策略: 打板/缩量潜伏/板块轮动
-│   ├── factor_lib/           # 40+因子（技术/基本面/价量/情绪/板块宏观）
-│   ├── stock_picker/         # 盘后选股
-│   ├── monitor/realtime.py   # 实时监控（需要重写）
-│   ├── scripts/              # step1_fetch.py, step2_clean.py, fetch_all.py
-│   └── utils/
-├── Untitled-12_comprehensive_optimized.py  # 原始单文件（已被quant_system_v1替代）
-├── data/                     # 全局CSV数据
-├── data_all_stocks/          # 按股票拆分的日线数据
-├── tushare_api_reference.md  # Tushare 231接口文档
-└── 使用教程/
+## 启动
+```bash
+cd F:\编程文件\quant_system_v1
+py main.py fetch --end 2026-05-07    # 抓数据(重启后第一件事)
+py main.py backtest --strategy 打板策略
+py scripts/run_all_backtests.py
+py scripts/pipeline.py
 ```
 
-## 已完成
-- [x] 模块化重构（从Untitled-12拆分）
-- [x] Tushare连接验证: stock_basic(5499只), daily(5460条/日)
-- [x] 数据抓取脚本: step1_fetch.py + step2_clean.py + fetch_all.py（15+接口）
-- [x] 事件驱动回测引擎
-- [x] 3策略 + 评分规则
-- [x] 因子注册系统
-- [x] 多数据源降级
-- [x] 市场状态检测 + 统一策略管线
-- [x] Superpowers 已安装（14技能），settings.json路径已修复
+## 关键配置
+- Token: 123396cf48bacd87370d4541fe4c2c51bcacb43f32f66890650dd5bb907a
+- API: http://jiaoch.site
+- Python: C:\Users\Administrator\AppData\Local\Programs\Python\Python311\python.exe
+- 限频: 120/min, 并发2
 
-## 待完成（双线并行）
-### 线1：数据 + 回测
-- [ ] 执行全量数据抓取（先跑2024-10-01到2024-12-31快速验证）
-- [ ] 向量化回测引擎（参数扫描/因子IC分析）
-- [ ] 因子评价体系（IC/IR/分组回测/去极值/中性化/标准化）
-- [ ] 因子合成（等权/IC加权/最优化）
-- [ ] 回测增加真实涨跌停限制
+## 架构
+```
+quant_system_v1/
+├── main.py          # CLI: fetch/backtest/pick/monitor/evolve
+├── backtest/        # vectorized_engine(默认) + engine(事件驱动)
+├── strategy/        # 8策略
+├── factor_lib/      # 66因子 + 评价/中性化/合成
+├── data_source/     # fetcher(含并发限频) + concurrency(RateLimiter)
+├── ml/              # LightGBM预测器
+├── evolution/       # 遗传编程/扫描器/因子进化/GitHub挖掘
+├── optimizer/       # 网格/Walk-Forward/贝叶斯
+├── analysis/        # 成本/归因/相关性/压力/竞争排名
+├── data_warehouse/  # DuckDB存储+清洗
+├── scheduler/       # 定时调度
+└── scripts/         # pipeline/benchmark/run_all_backtests等
+```
 
-### 线2：策略 + 监控
-- [ ] 新增策略：首板策略/龙头反包/断板反包
-- [ ] 实时监控重写（自动获取监控列表+信号生成）
-- [ ] 企微推送（Webhook已配置）
-- [ ] 盘前集合竞价强度分析
-- [ ] 板块热度/资金流向监控
-- [ ] 所有策略迁移到统一管线(pipeline.py)
-
-### 后续
-- [ ] 参数优化（网格搜索/贝叶斯优化）
-- [ ] 多策略组合回测
-- [ ] HTML回测报告
-- [ ] ETF/可转债支持
-
-## 三板代码映射
-- 主板: 60xxxx/00xxxx (涨跌停±10%)
-- 创业板: 30xxxx (±20%)
-- 科创板: 68xxxx (±20%)
-- 北交所: 8xxxxx/4xxxxx (±30%)
+## 已知问题
+- 数据仅102天, 需全量抓取(2020-2026)
+- DuckDB文件>100MB, gitignore已排除
+- 5个策略参数需调优(板块/龙头/均线/缩量/首板)
+- 扫描器需API名称映射(Tushare中文名→英文方法名)
