@@ -133,7 +133,11 @@ class DataFetcher:
     # ---- 个股 ----
     def _fetch_stocks(self, codes, s, e):
         """按日期批量拉全市场日线,并合并 global 每日接口。按股票拆分存储"""
-        ts_src = self.mgr.sources[0]
+        from .tushare_source import TushareSource
+        ts_src = TushareSource()
+        if not ts_src._pro:
+            logger.error("Tushare 不可用，无法抓取数据")
+            return
         REQUIRED_COLS = {'open', 'high', 'low', 'close', 'vol', 'amount'}
 
         start_dt = pd.Timestamp(s)
