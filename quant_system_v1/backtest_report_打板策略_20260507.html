@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<title>Backtest Report - 打板策略</title>
+<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+<style>
+body { font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif; margin: 40px; background: #f8f9fa; color: #212529; }
+.container { max-width: 960px; margin: 0 auto; }
+h1 { color: #1a1a2e; border-bottom: 3px solid #1f77b4; padding-bottom: 10px; }
+h2 { color: #333; margin-top: 30px; }
+table { border-collapse: collapse; width: 100%; margin: 20px 0; background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+td, th { border: 1px solid #dee2e6; padding: 10px 16px; text-align: left; }
+th { background: #1f77b4; color: white; }
+tr:nth-child(even) { background: #f2f2f2; }
+.chart-container { background: white; padding: 20px; margin: 20px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border-radius: 4px; }
+</style></head><body>
+<div class="container">
+<h1>Backtest Report: 打板策略</h1>
+<h2>Performance Metrics</h2>
+<table><tr><td><b>Strategy</b></td><td>打板策略</td></tr>
+<tr><td><b>Initial Capital</b></td><td>5,000</td></tr>
+<tr><td><b>Final Capital</b></td><td>5,095</td></tr>
+<tr><td><b>Total Return</b></td><td>1.91%</td></tr>
+<tr><td><b>Annual Return</b></td><td>8.12%</td></tr>
+<tr><td><b>Max Drawdown</b></td><td>3.88%</td></tr>
+<tr><td><b>Sharpe Ratio</b></td><td>0.73</td></tr>
+<tr><td><b>Total Trades</b></td><td>29</td></tr>
+<tr><td><b>Win Rate</b></td><td>42.9%</td></tr></table>
+<div class="chart-container">
+            <div id="equity_chart" style="width:100%;height:500px;"></div>
+            <script>
+            var equityData = [{"date":"2024-10-08","total_value":5000.0},{"date":"2024-10-09","total_value":4992.725},{"date":"2024-10-10","total_value":4945.237075},{"date":"2024-10-11","total_value":4945.237075},{"date":"2024-10-14","total_value":4945.237075},{"date":"2024-10-15","total_value":4945.237075},{"date":"2024-10-16","total_value":4945.237075},{"date":"2024-10-17","total_value":4945.237075},{"date":"2024-10-18","total_value":4937.597075},{"date":"2024-10-21","total_value":4982.11398},{"date":"2024-10-22","total_value":4982.11398},{"date":"2024-10-23","total_value":4982.11398},{"date":"2024-10-24","total_value":4982.11398},{"date":"2024-10-25","total_value":4982.11398},{"date":"2024-10-28","total_value":4982.11398},{"date":"2024-10-29","total_value":4982.11398},{"date":"2024-10-30","total_value":4982.11398},{"date":"2024-10-31","total_value":4982.11398},{"date":"2024-11-01","total_value":4982.11398},{"date":"2024-11-04","total_value":4965.64398},{"date":"2024-11-05","total_value":5096.64398},{"date":"2024-11-06","total_value":5218.25581},{"date":"2024-11-07","total_value":5195.28581},{"date":"2024-11-08","total_value":5136.07499},{"date":"2024-11-11","total_value":5077.29331},{"date":"2024-11-12","total_value":5077.29331},{"date":"2024-11-13","total_value":5077.29331},{"date":"2024-11-14","total_value":5077.29331},{"date":"2024-11-15","total_value":5069.93831},{"date":"2024-11-18","total_value":5108.8329},{"date":"2024-11-19","total_value":5108.8329},{"date":"2024-11-20","total_value":5108.8329},{"date":"2024-11-21","total_value":5100.3679},{"date":"2024-11-22","total_value":5169.3679},{"date":"2024-11-25","total_value":5084.25533},{"date":"2024-11-26","total_value":5084.25533},{"date":"2024-11-27","total_value":5084.25533},{"date":"2024-11-28","total_value":5084.25533},{"date":"2024-11-29","total_value":5077.01533},{"date":"2024-12-02","total_value":5114.059795},{"date":"2024-12-03","total_value":5105.399795},{"date":"2024-12-04","total_value":5024.443095},{"date":"2024-12-05","total_value":5015.913095},{"date":"2024-12-06","total_value":5086.913095},{"date":"2024-12-09","total_value":5154.78737},{"date":"2024-12-10","total_value":5154.78737},{"date":"2024-12-11","total_value":5154.78737},{"date":"2024-12-12","total_value":5139.91737},{"date":"2024-12-13","total_value":5100.91737},{"date":"2024-12-16","total_value":5039.587815},{"date":"2024-12-17","total_value":5039.587815},{"date":"2024-12-18","total_value":5039.587815},{"date":"2024-12-19","total_value":5039.587815},{"date":"2024-12-20","total_value":5039.587815},{"date":"2024-12-23","total_value":5039.587815},{"date":"2024-12-24","total_value":5039.587815},{"date":"2024-12-25","total_value":5039.587815},{"date":"2024-12-26","total_value":5039.587815},{"date":"2024-12-27","total_value":5039.587815},{"date":"2024-12-30","total_value":5031.407815},{"date":"2024-12-31","total_value":5095.407815}];
+            var dates = equityData.map(function(d) { return d.date; });
+            var values = equityData.map(function(d) { return d.total_value; });
+            var trace = {x: dates, y: values, type: 'scatter', name: 'Equity', line: {color: '#1f77b4'}};
+            var layout = {title: 'Equity Curve', xaxis: {title: 'Date'}, yaxis: {title: 'Total Value'},
+                          margin: {t: 40, r: 20, b: 40, l: 60}, hovermode: 'x unified'};
+            Plotly.newPlot('equity_chart', [trace], layout);
+            </script>
+            </div>
+
+</div></body></html>

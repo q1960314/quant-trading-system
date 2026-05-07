@@ -41,3 +41,4 @@ memory/
 .DS_Store
 Thumbs.db
 NTUSER.*
+*.duckdb

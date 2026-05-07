@@ -38,7 +38,7 @@ class SectorRotationStrategy(StrategyBase):
             df.loc[(df['float_market_cap'] >= 20) & (df['float_market_cap'] <= 500), 'total_score'] += 1
         if '_ind_rank' in df.columns:
             df.loc[df['_ind_rank'] <= 0.1, 'total_score'] += 2
-        pass_score = 5
+        pass_score = 8
         df = df[df['total_score'] >= pass_score]
         return df.sort_values('total_score', ascending=False).reset_index(drop=True)
 
@@ -47,6 +47,6 @@ class SectorRotationStrategy(StrategyBase):
         try:
             scored = self.score(self.filter(df))
             if scored.empty or 'total_score' not in scored.columns: return pd.DataFrame()
-            scored['signal'] = (scored['total_score'] >= 6).astype(int)
+            scored['signal'] = (scored['total_score'] >= 9).astype(int)
             return scored.pivot_table(index='trade_date', columns='ts_code', values='signal', fill_value=0).astype(int)
         except Exception: return pd.DataFrame()
