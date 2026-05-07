@@ -2,7 +2,7 @@
 数据抓取器 v3 — 五维度全量/增量
 个股+指数+板块行业+市场情绪+宏观
 """
-import os, time, pandas as pd
+import os, time, threading, pandas as pd
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -131,9 +131,45 @@ class DataFetcher:
         return True
 
     # ---- 个股 ----
-    def _fetch_stocks(self, codes, s, e):
-        """按日期批量拉全市场日线,并合并 global 每日接口。按股票拆分存储"""
+    def _fetch_one_day(self, args):
+        """Fetch all 12 interfaces for one trading day (runs in thread pool)."""
         from .tushare_source import TushareSource
+        ts_src, dt, ds, limiter = args
+        # Re-init per thread to avoid connection sharing issues
+        result = {'daily': pd.DataFrame(), 'daily_basic': pd.DataFrame()}
+        pro = ts_src._pro
+
+        # P0-P2: 12个每日接口
+        for method, key in [('daily','daily'), ('daily_basic','daily_basic'),
+                            ('stk_limit','stk_limit'), ('limit_list_d','limit_list_d'),
+                            ('limit_step','limit_step'), ('top_list','top_list'),
+                            ('top_inst','top_inst'), ('hm_detail','hm_detail'),
+                            ('ths_hot','ths_hot'), ('moneyflow_cnt_ths','mf_cnt'),
+                            ('moneyflow_ind_ths','mf_ind'), ('moneyflow_hsgt','mf_hsgt')]:
+            limiter.acquire()
+            try:
+                fn = getattr(pro, method)
+                df = fn(trade_date=ds)
+                if df is not None and not df.empty:
+                    if method in ('stk_limit','limit_list_d','limit_step','top_list','top_inst',
+                                   'hm_detail','ths_hot','moneyflow_cnt_ths','moneyflow_ind_ths','moneyflow_hsgt'):
+                        df = df.copy()
+                        df['trade_date'] = ds
+                    result[key] = df
+            except: pass
+
+        with self._lock:
+            self._completed += 1
+            if self._completed % 20 == 0:
+                daily_rows = sum(len(x) for x in self._daily_all if not x.empty)
+                print(f"  [{self._completed}/{self._total_days}] {daily_rows} daily rows", flush=True)
+
+        return result
+
+    def _fetch_stocks(self, codes, s, e):
+        """按日期批量拉全市场日线,用2线程并发。按股票拆分存储"""
+        from .tushare_source import TushareSource
+        from .concurrency import RateLimiter
         ts_src = TushareSource()
         if not ts_src._pro:
             logger.error("Tushare 不可用，无法抓取数据")
@@ -143,48 +179,46 @@ class DataFetcher:
         start_dt = pd.Timestamp(s)
         end_dt = pd.Timestamp(e)
         days = pd.date_range(start_dt, end_dt, freq='B')
-        daily_all, basic_all = [], []
-        top_all, top_inst_all, limit_d_all = [], [], []
-        limit_step_all, hm_all, hot_all = [], [], []
-        mf_cnt_all, mf_ind_all, mf_hsgt_all = [], [], []
-        stk_limit_all = []
-
         total = len(days)
         eta_min = total * 12 // 120
-        print(f"  开始拉取: {total}天, {12}接口/天, 预计{eta_min}分钟", flush=True)
-        logger.info(f"按日批量拉取: {total}个交易日 ({12}接口/日, 约{eta_min}分钟)")
-        for i, dt in enumerate(days):
-            ds = dt.strftime('%Y%m%d')
-            # P0-P2: 12每日接口，间隔0.5s = 120次/分钟
-            dd = self._call_silent(ts_src, 'daily', trade_date=ds)
-            if not dd.empty: daily_all.append(dd); time.sleep(0.5)
-            db = self._call_silent(ts_src, 'daily_basic', trade_date=ds)
-            if not db.empty: basic_all.append(db); time.sleep(0.5)
-            sl = self._call_silent(ts_src, 'stk_limit', trade_date=ds)
-            if not sl.empty: sl['trade_date'] = ds; stk_limit_all.append(sl); time.sleep(0.5)
-            ld = self._call_silent(ts_src, 'limit_list_d', trade_date=ds)
-            if not ld.empty: ld['trade_date'] = ds; limit_d_all.append(ld); time.sleep(0.5)
-            ls = self._call_silent(ts_src, 'limit_step', trade_date=ds)
-            if not ls.empty: ls['trade_date'] = ds; limit_step_all.append(ls); time.sleep(0.5)
-            tl = self._call_silent(ts_src, 'top_list', trade_date=ds)
-            if not tl.empty: tl['trade_date'] = ds; top_all.append(tl); time.sleep(0.5)
-            ti = self._call_silent(ts_src, 'top_inst', trade_date=ds)
-            if not ti.empty: ti['trade_date'] = ds; top_inst_all.append(ti); time.sleep(0.5)
-            hm = self._call_silent(ts_src, 'hm_detail', trade_date=ds)
-            if not hm.empty: hm['trade_date'] = ds; hm_all.append(hm); time.sleep(0.5)
-            hot = self._call_silent(ts_src, 'ths_hot', trade_date=ds)
-            if not hot.empty: hot['trade_date'] = ds; hot_all.append(hot); time.sleep(0.5)
-            mc = self._call_silent(ts_src, 'moneyflow_cnt_ths', trade_date=ds)
-            if not mc.empty: mc['trade_date'] = ds; mf_cnt_all.append(mc); time.sleep(0.5)
-            mi = self._call_silent(ts_src, 'moneyflow_ind_ths', trade_date=ds)
-            if not mi.empty: mi['trade_date'] = ds; mf_ind_all.append(mi); time.sleep(0.5)
-            mh = self._call_silent(ts_src, 'moneyflow_hsgt', trade_date=ds)
-            if not mh.empty: mh['trade_date'] = ds; mf_hsgt_all.append(mh)
+        print(f"  开始拉取: {total}天, 12接口/天, 2并发, 预计{eta_min}分钟", flush=True)
+        logger.info(f"按日批量拉取: {total}天 ({12}接口/天, 2并发)")
 
-            if (i+1) % 20 == 0:
-                msg = f"  [{i+1}/{total}] {sum(len(x) for x in daily_all)} rows | {i+1} days done"
-                print(msg, flush=True)
-                logger.info(msg)
+        # Thread-safe accumulators
+        self._daily_all, self._basic_all = [], []
+        self._top_all, self._top_inst_all, self._limit_d_all = [], [], []
+        self._limit_step_all, self._hm_all, self._hot_all = [], [], []
+        self._mf_cnt_all, self._mf_ind_all, self._mf_hsgt_all = [], [], []
+        self._stk_limit_all = []
+        self._completed = 0
+        self._total_days = total
+        self._lock = threading.Lock()
+
+        limiter = RateLimiter(rpm=120)
+        args_list = [(ts_src, dt, dt.strftime('%Y%m%d'), limiter) for dt in days]
+
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [executor.submit(self._fetch_one_day, args) for args in args_list]
+            for f in as_completed(futures):
+                try:
+                    r = f.result()
+                    for key, lst in [('daily', self._daily_all), ('daily_basic', self._basic_all),
+                                      ('stk_limit', self._stk_limit_all), ('limit_list_d', self._limit_d_all),
+                                      ('limit_step', self._limit_step_all), ('top_list', self._top_all),
+                                      ('top_inst', self._top_inst_all), ('hm_detail', self._hm_all),
+                                      ('ths_hot', self._hot_all), ('mf_cnt', self._mf_cnt_all),
+                                      ('mf_ind', self._mf_ind_all), ('mf_hsgt', self._mf_hsgt_all)]:
+                        if key in r and not r[key].empty:
+                            lst.append(r[key])
+                except: pass
+
+        # Rename for downstream processing
+        daily_all, basic_all = self._daily_all, self._basic_all
+        top_all, top_inst_all, limit_d_all = self._top_all, self._top_inst_all, self._limit_d_all
+        limit_step_all, hm_all, hot_all = self._limit_step_all, self._hm_all, self._hot_all
+        mf_cnt_all, mf_ind_all, mf_hsgt_all = self._mf_cnt_all, self._mf_ind_all, self._mf_hsgt_all
+        stk_limit_all = self._stk_limit_all
 
         if not daily_all:
             logger.error("未拉到任何日线数据！")
