@@ -30,8 +30,15 @@ def main():
     from strategy import StrategyRegistry
     from backtest.vectorized_engine import VectorizedBacktestEngine
     from ml.predictor import MLPredictor
+    # Auto-detect date range from data
+    import pandas as pd
+    try:
+        d = pd.read_csv(os.path.join(os.path.dirname(__file__),'..','data','daily.csv'), nrows=1)
+        end_d = str(d['trade_date'].iloc[0])
+    except:
+        end_d = '2024-12-31'
     e = VectorizedBacktestEngine(initial_capital=5000, start_date='2024-10-08',
-                                  end_date='2024-12-31', max_hold_stocks=5, single_stock_position=0.15)
+                                  end_date=end_d, max_hold_stocks=5, single_stock_position=0.15)
     e.load_data()
     e.constraint_matrix = e.build_constraint_matrix()
     p = MLPredictor(); p.load('20260507')

@@ -69,11 +69,12 @@ class SuspensionConstraint(BaseConstraint):
 
 
 class LiquidityConstraint(BaseConstraint):
-    """Filter by minimum turnover amount and turnover rate."""
+    """Filter by turnover amount, turnover rate, and volume percentile rank."""
 
-    def __init__(self, min_amount=50000, min_turnover=0.5):
+    def __init__(self, min_amount=50000, min_turnover=0.5, min_vol_pct=30):
         self.min_amount = min_amount
         self.min_turnover = min_turnover
+        self.min_vol_pct = min_vol_pct  # Minimum daily volume percentile
 
     def apply(self, df: pd.DataFrame) -> pd.Series:
         if df.empty:
@@ -83,9 +84,10 @@ class LiquidityConstraint(BaseConstraint):
             mask &= (df['amount'] >= self.min_amount)
         if 'turnover_rate' in df.columns:
             mask &= (df['turnover_rate'] >= self.min_turnover)
-        elif 'volume' in df.columns and 'total_share' in df.columns:
-            turnover = df['volume'] / df['total_share'] * 100
-            mask &= (turnover >= self.min_turnover)
+        if 'vol' in df.columns:
+            # Only top N% by volume tradable (filters illiquid stocks)
+            vol_rank = df['vol'].rank(pct=True) * 100
+            mask &= (vol_rank >= self.min_vol_pct)
         return mask
 
 

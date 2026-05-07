@@ -41,8 +41,9 @@ class VectorizedBacktestEngine:
             LimitUpDownConstraint(),
             SuspensionConstraint(),
             LiquidityConstraint(
-                min_amount=cc.get('min_amount', 100000),
-                min_turnover=cc.get('min_turnover', 3.0),
+                min_amount=cc.get('min_amount', 50000),
+                min_turnover=cc.get('min_turnover', 0.5),
+                min_vol_pct=cc.get('min_vol_pct', 20),
             ),
         ]
         self.pos_constraint = PositionConstraint(
