@@ -71,47 +71,47 @@ class DataFetcher:
 
     # ---- 财务数据 (逐股, 可选) ----
     def fetch_financials(self, codes, s, e):
-        """income, balance, cashflow, fina_indicator — 按季度，逐股拉取"""
-        ts_src = self.mgr.sources[0]
+        """income, balance, cashflow, fina_indicator"""
+        from .tushare_source import TushareSource
+        ts_src = TushareSource()
         for method, name in [('income', '利润表'), ('balancesheet', '资产负债表'),
                               ('cashflow', '现金流量表'), ('fina_indicator', '财务指标')]:
             all_data = []
-            logger.info(f"  {name} ({method})...")
-            for i, code in enumerate(codes):
+            print(f"  {name} ({method})...", flush=True)
+            pbar = tqdm(codes, desc=f"  {name}", unit="股", ncols=80)
+            for code in pbar:
                 try:
-                    df = ts_src._try(method, ts_code=code, start_date=s, end_date=e)
+                    fn = getattr(ts_src._pro, method)
+                    df = fn(ts_code=code, start_date=s, end_date=e)
                     if df is not None and not df.empty:
                         df['ts_code'] = code
                         all_data.append(df)
                 except: pass
-                if (i+1) % 500 == 0:
-                    logger.info(f"    {i+1}/{len(codes)}")
+            pbar.close()
             if all_data:
                 pd.concat(all_data).to_csv(
                     os.path.join(LOCAL_GLOBAL_DIR, f'{method}.csv'),
                     index=False, encoding='utf-8-sig')
                 logger.info(f"    {name}: {len(all_data)}只有效")
 
-    # ---- 扩展数据 (逐股, 可选, 受 EXTEND_FETCH_CONFIG 控制) ----
+    # ---- 扩展数据 (逐股, 可选) ----
     def fetch_extended(self, codes, s, e):
-        """筹码/大宗/北向/概念 — 按 EXTEND_FETCH_CONFIG 开关"""
-        ts_src = self.mgr.sources[0]
-        config_map = {
-            'hk_hold': ('hk_hold', '北向资金'),
-            'cyq_chips': ('cyq_chips', '筹码分布'),
-        }
-        for cfg_key, (method, name) in config_map.items():
+        """筹码/北向"""
+        from .tushare_source import TushareSource
+        ts_src = TushareSource()
+        for method, name in [('hk_hold', '北向资金'), ('cyq_chips', '筹码分布')]:
             all_data = []
-            logger.info(f"  {name} ({method})...")
-            for i, code in enumerate(codes):
+            print(f"  {name} ({method})...", flush=True)
+            pbar = tqdm(codes, desc=f"  {name}", unit="股", ncols=80)
+            for code in pbar:
                 try:
-                    df = ts_src._try(method, ts_code=code, start_date=s, end_date=e)
+                    fn = getattr(ts_src._pro, method)
+                    df = fn(ts_code=code, start_date=s, end_date=e)
                     if df is not None and not df.empty:
                         df['ts_code'] = code
                         all_data.append(df)
                 except: pass
-                if (i+1) % 500 == 0:
-                    logger.info(f"    {i+1}/{len(codes)}")
+            pbar.close()
             if all_data:
                 pd.concat(all_data).to_csv(
                     os.path.join(LOCAL_GLOBAL_DIR, f'{method}.csv'),
