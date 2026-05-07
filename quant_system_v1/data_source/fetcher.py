@@ -68,53 +68,70 @@ class DataFetcher:
     def fetch_incremental(self):
         latest = self._detect_latest_date()
         target = self.cal.prev_trade_day(datetime.now().date())
-        logger.info(f"增量: 本地{latest} → 目标{target}")
+        logger.info(f"增量: 本地{latest.date()} → 目标{target}")
         if latest >= target:
             logger.info("数据已最新"); return True
         s = (latest + timedelta(days=1)).strftime('%Y%m%d')
         e = target.strftime('%Y%m%d')
-
-        self._fetch_sectors(s, e)
-        self._fetch_sentiment(s, e)
-        self._fetch_macro(s, e)
+        # 增量只抓每日接口，不重复抓一次性数据
         self._fetch_stocks(self._get_all_codes(), s, e)
         self._fetch_indices(s, e)
         return True
 
     # ---- 个股 ----
     def _fetch_stocks(self, codes, s, e):
-        """按日期批量拉全市场日线 + daily_basic，然后按股票拆分存储"""
+        """按日期批量拉全市场日线,并合并 global 每日接口。按股票拆分存储"""
         ts_src = self.mgr.sources[0]
         REQUIRED_COLS = {'open', 'high', 'low', 'close', 'vol', 'amount'}
 
-        # 遍历每一天
         start_dt = pd.Timestamp(s)
         end_dt = pd.Timestamp(e)
-        days = pd.date_range(start_dt, end_dt, freq='B')  # 工作日
+        days = pd.date_range(start_dt, end_dt, freq='B')
         daily_all, basic_all = [], []
+        top_all, top_inst_all, limit_d_all = [], [], []
+        limit_step_all, hm_all, hot_all = [], [], []
+        mf_cnt_all, mf_ind_all, mf_hsgt_all = [], [], []
+        stk_limit_all = []
 
-        logger.info(f"按日批量拉取: {len(days)}个交易日 (一次拉全市场)")
+        total = len(days)
+        logger.info(f"按日批量拉取: {total}个交易日 (一次拉全市场, 11接口/日)")
         import time as _time
         for i, dt in enumerate(days):
             ds = dt.strftime('%Y%m%d')
-            # Rate limiting: 120/min = 0.5s/call, 2 calls/iter = 1s/iter
-            _time.sleep(0.6)
-            for attempt in range(3):
-                try:
-                    dd = ts_src.daily(start_date=dt)
-                    if dd is not None and not dd.empty:
-                        daily_all.append(dd)
-                    break
-                except:
-                    if attempt < 2:
-                        _time.sleep(2)  # Wait and retry on rate limit
-            try:
-                db = ts_src._try('daily_basic', trade_date=ds)
-                if db is not None and not db.empty:
-                    basic_all.append(db)
-            except: pass
+            _time.sleep(0.5)  # 120/min rate limit
+
+            # P0: 日线 + 基本面 + 涨跌停价
+            dd = self._call_with_retry(ts_src, 'daily', start_date=dt)
+            if not dd.empty: daily_all.append(dd)
+            db = self._call_silent(ts_src, 'daily_basic', trade_date=ds)
+            if not db.empty: basic_all.append(db)
+            sl = self._call_silent(ts_src, 'stk_limit', trade_date=ds)
+            if not sl.empty: sl['trade_date'] = ds; stk_limit_all.append(sl)
+
+            # P1: 涨停列表 + 龙虎榜 + 游资 + 热榜
+            ld = self._call_silent(ts_src, 'limit_list_d', trade_date=ds)
+            if not ld.empty: ld['trade_date'] = ds; limit_d_all.append(ld)
+            ls = self._call_silent(ts_src, 'limit_step', trade_date=ds)
+            if not ls.empty: ls['trade_date'] = ds; limit_step_all.append(ls)
+            tl = self._call_silent(ts_src, 'top_list', trade_date=ds)
+            if not tl.empty: tl['trade_date'] = ds; top_all.append(tl)
+            ti = self._call_silent(ts_src, 'top_inst', trade_date=ds)
+            if not ti.empty: ti['trade_date'] = ds; top_inst_all.append(ti)
+            hm = self._call_silent(ts_src, 'hm_detail', trade_date=ds)
+            if not hm.empty: hm['trade_date'] = ds; hm_all.append(hm)
+            hot = self._call_silent(ts_src, 'ths_hot', trade_date=ds)
+            if not hot.empty: hot['trade_date'] = ds; hot_all.append(hot)
+
+            # P2: 资金流向
+            mc = self._call_silent(ts_src, 'moneyflow_cnt_ths', trade_date=ds)
+            if not mc.empty: mc['trade_date'] = ds; mf_cnt_all.append(mc)
+            mi = self._call_silent(ts_src, 'moneyflow_ind_ths', trade_date=ds)
+            if not mi.empty: mi['trade_date'] = ds; mf_ind_all.append(mi)
+            mh = self._call_silent(ts_src, 'moneyflow_hsgt', trade_date=ds)
+            if not mh.empty: mh['trade_date'] = ds; mf_hsgt_all.append(mh)
+
             if (i+1) % 50 == 0:
-                logger.info(f"  {i+1}/{len(days)} | 累计 {sum(len(x) for x in daily_all)} 条")
+                logger.info(f"  {i+1}/{total} | 日线累计 {sum(len(x) for x in daily_all)} 条")
 
         if not daily_all:
             logger.error("未拉到任何日线数据！")
@@ -126,23 +143,19 @@ class DataFetcher:
         # 合并 daily_basic
         if basic_all:
             df_basic = pd.concat(basic_all, ignore_index=True)
-            if 'trade_date' in df_all.columns and 'trade_date' in df_basic.columns:
-                df_all['trade_date'] = df_all['trade_date'].astype(str)
-                df_basic['trade_date'] = df_basic['trade_date'].astype(str)
-                keep = [c for c in df_basic.columns if c not in df_all.columns or c in ['ts_code','trade_date']]
-                df_all = df_all.merge(df_basic[keep], on=['ts_code','trade_date'], how='left')
+            df_all['trade_date'] = df_all['trade_date'].astype(str)
+            df_basic['trade_date'] = df_basic['trade_date'].astype(str)
+            keep = [c for c in df_basic.columns if c not in df_all.columns or c in ['ts_code','trade_date']]
+            df_all = df_all.merge(df_basic[keep], on=['ts_code','trade_date'], how='left')
 
         # 按股票拆分存储
         df_all = DataAdapter.normalize_daily(df_all)
         ok = 0
         for code, grp in df_all.groupby('ts_code'):
-            if code not in codes:
-                continue  # 只保存配置的板块内的股票
-            if len(grp) < 5:
-                continue
+            if code not in codes: continue
+            if len(grp) < 5: continue
             missing = REQUIRED_COLS - set(grp.columns)
-            if missing:
-                continue
+            if missing: continue
             sp = os.path.join(LOCAL_DATA_DIR, code)
             os.makedirs(sp, exist_ok=True)
             fp = os.path.join(sp, 'daily.csv')
@@ -154,6 +167,42 @@ class DataFetcher:
             ok += 1
 
         logger.info(f"个股完成: {ok}/{len(codes)}只有效数据")
+
+        # 存全局CSV
+        self._save_global(top_all, 'top_list.csv')
+        self._save_global(top_inst_all, 'top_inst.csv')
+        self._save_global(limit_d_all, 'limit_list_d.csv')
+        self._save_global(limit_step_all, 'limit_step.csv')
+        self._save_global(hm_all, 'hm_detail.csv')
+        self._save_global(hot_all, 'ths_hot.csv')
+        self._save_global(mf_cnt_all, 'moneyflow_cnt_ths.csv')
+        self._save_global(mf_ind_all, 'moneyflow_ind_ths.csv')
+        self._save_global(mf_hsgt_all, 'moneyflow_hsgt.csv')
+        self._save_global(stk_limit_all, 'stk_limit.csv')
+
+    def _call_with_retry(self, ts_src, method, **kwargs):
+        import time as _time
+        for attempt in range(3):
+            try:
+                result = ts_src._try(method, **kwargs)
+                if result is not None and not result.empty:
+                    return result
+                return pd.DataFrame()
+            except:
+                if attempt < 2: _time.sleep(2)
+        return pd.DataFrame()
+
+    def _call_silent(self, ts_src, method, **kwargs):
+        try:
+            result = ts_src._try(method, **kwargs)
+            return result if result is not None and not result.empty else pd.DataFrame()
+        except:
+            return pd.DataFrame()
+
+    def _save_global(self, data_list, fname):
+        if data_list:
+            df = pd.concat(data_list, ignore_index=True)
+            df.to_csv(os.path.join(LOCAL_GLOBAL_DIR, fname), index=False, encoding='utf-8-sig')
 
     # ---- 指数 ----
     def _fetch_indices(self, s, e):
