@@ -46,7 +46,7 @@ class MLPredictionStrategy(StrategyBase):
             df['total_score'] = probs.values * 20
         except Exception:
             df['total_score'] = 0.0
-        df = df[df['total_score'] >= 8]
+        df = df[df['total_score'] >= 14]  # Higher threshold: only high-confidence predictions
         return df.sort_values('total_score', ascending=False).reset_index(drop=True)
 
     def generate_signals_vectorized(self, df):
@@ -56,7 +56,7 @@ class MLPredictionStrategy(StrategyBase):
             scored = self.score(df)
             if scored.empty or 'total_score' not in scored.columns:
                 return pd.DataFrame()
-            scored['signal'] = (scored['total_score'] >= 10).astype(int)
+            scored['signal'] = (scored['total_score'] >= 15).astype(int)
             return scored.pivot_table(
                 index='trade_date', columns='ts_code', values='signal', fill_value=0
             ).astype(int)
