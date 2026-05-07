@@ -150,12 +150,10 @@ class DataFetcher:
         stk_limit_all = []
 
         total = len(days)
-        logger.info(f"按日批量拉取: {total}个交易日 (一次拉全市场, 11接口/日)")
-        import time as _time
+        logger.info(f"按日批量拉取: {total}个交易日 ({12}接口/日, 约{total*12//120}分钟)")
         for i, dt in enumerate(days):
             ds = dt.strftime('%Y%m%d')
-            _time.sleep(0.5)  # 120/min rate limit
-
+            # 12 calls/iter already spaces naturally within 120/min limit
             # P0: 日线 + 基本面 + 涨跌停价
             dd = self._call_with_retry(ts_src, 'daily', trade_date=ds)
             if not dd.empty: daily_all.append(dd)
@@ -186,7 +184,7 @@ class DataFetcher:
             mh = self._call_silent(ts_src, 'moneyflow_hsgt', trade_date=ds)
             if not mh.empty: mh['trade_date'] = ds; mf_hsgt_all.append(mh)
 
-            if (i+1) % 50 == 0:
+            if (i+1) % 20 == 0:
                 logger.info(f"  {i+1}/{total} | 日线累计 {sum(len(x) for x in daily_all)} 条")
 
         if not daily_all:
