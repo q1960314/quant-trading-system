@@ -39,7 +39,7 @@ STANDALONE_MODE = True
 FETCH_OPTIMIZATION = {
     'max_workers': 2,  # jiaoch.site API并发上限=2
     'batch_io_interval': 10,
-    'max_requests_per_minute': 200
+    'max_requests_per_minute': 120
 }
 FILTER_CONFIG = {"min_amount": 100000, "min_turnover": 3, "exclude_st": True, "max_fetch_retry": 3}
 

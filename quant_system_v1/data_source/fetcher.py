@@ -94,19 +94,26 @@ class DataFetcher:
         daily_all, basic_all = [], []
 
         logger.info(f"按日批量拉取: {len(days)}个交易日 (一次拉全市场)")
+        import time as _time
         for i, dt in enumerate(days):
             ds = dt.strftime('%Y%m%d')
-            try:
-                dd = ts_src.daily(start_date=dt)  # 不传ts_code = 全市场
-                if dd is not None and not dd.empty:
-                    daily_all.append(dd)
-            except: pass
+            # Rate limiting: 120/min = 0.5s/call, 2 calls/iter = 1s/iter
+            _time.sleep(0.6)
+            for attempt in range(3):
+                try:
+                    dd = ts_src.daily(start_date=dt)
+                    if dd is not None and not dd.empty:
+                        daily_all.append(dd)
+                    break
+                except:
+                    if attempt < 2:
+                        _time.sleep(2)  # Wait and retry on rate limit
             try:
                 db = ts_src._try('daily_basic', trade_date=ds)
                 if db is not None and not db.empty:
                     basic_all.append(db)
             except: pass
-            if (i+1) % 20 == 0:
+            if (i+1) % 50 == 0:
                 logger.info(f"  {i+1}/{len(days)} | 累计 {sum(len(x) for x in daily_all)} 条")
 
         if not daily_all:
