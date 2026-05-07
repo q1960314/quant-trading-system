@@ -153,7 +153,7 @@ class DataFetcher:
             _time.sleep(0.5)  # 120/min rate limit
 
             # P0: 日线 + 基本面 + 涨跌停价
-            dd = self._call_with_retry(ts_src, 'daily', start_date=dt)
+            dd = self._call_with_retry(ts_src, 'daily', trade_date=ds)
             if not dd.empty: daily_all.append(dd)
             db = self._call_silent(ts_src, 'daily_basic', trade_date=ds)
             if not db.empty: basic_all.append(db)
@@ -233,10 +233,13 @@ class DataFetcher:
         self._save_global(stk_limit_all, 'stk_limit.csv')
 
     def _call_with_retry(self, ts_src, method, **kwargs):
+        """直接调 tushare pro 对象，绕过 _try 递归"""
         import time as _time
+        pro = ts_src._pro
         for attempt in range(3):
             try:
-                result = ts_src._try(method, **kwargs)
+                fn = getattr(pro, method)
+                result = fn(**kwargs)
                 if result is not None and not result.empty:
                     return result
                 return pd.DataFrame()
@@ -245,8 +248,11 @@ class DataFetcher:
         return pd.DataFrame()
 
     def _call_silent(self, ts_src, method, **kwargs):
+        """直接调 tushare pro 对象，绕过 _try 递归"""
         try:
-            result = ts_src._try(method, **kwargs)
+            pro = ts_src._pro
+            fn = getattr(pro, method)
+            result = fn(**kwargs)
             return result if result is not None and not result.empty else pd.DataFrame()
         except:
             return pd.DataFrame()
