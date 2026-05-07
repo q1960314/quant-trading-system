@@ -150,7 +150,9 @@ class DataFetcher:
         stk_limit_all = []
 
         total = len(days)
-        logger.info(f"按日批量拉取: {total}个交易日 ({12}接口/日, 约{total*12//120}分钟)")
+        eta_min = total * 12 // 120
+        print(f"  开始拉取: {total}天, {12}接口/天, 预计{eta_min}分钟", flush=True)
+        logger.info(f"按日批量拉取: {total}个交易日 ({12}接口/日, 约{eta_min}分钟)")
         for i, dt in enumerate(days):
             ds = dt.strftime('%Y%m%d')
             # P0-P2: 12每日接口，间隔0.5s = 120次/分钟
@@ -180,13 +182,16 @@ class DataFetcher:
             if not mh.empty: mh['trade_date'] = ds; mf_hsgt_all.append(mh)
 
             if (i+1) % 20 == 0:
-                logger.info(f"  {i+1}/{total} | 日线累计 {sum(len(x) for x in daily_all)} 条")
+                msg = f"  [{i+1}/{total}] {sum(len(x) for x in daily_all)} rows | {i+1} days done"
+                print(msg, flush=True)
+                logger.info(msg)
 
         if not daily_all:
             logger.error("未拉到任何日线数据！")
             return
 
         df_all = pd.concat(daily_all, ignore_index=True)
+        print(f"  日线拉取完成: {len(df_all)}行, {df_all['ts_code'].nunique()}只股票", flush=True)
         logger.info(f"全量日线: {len(df_all)}行, {df_all['ts_code'].nunique()}只股票")
 
         # 合并 daily_basic
