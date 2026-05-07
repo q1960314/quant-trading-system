@@ -47,23 +47,75 @@ class DataFetcher:
         codes = stocks['ts_code'].tolist()
         logger.info(f"股票列表: {len(codes)}只")
 
-        # 1. 个股日线
+        # 1. 个股日线 + 所有每日接口 (批量按日期, 快)
         self._fetch_stocks(codes, s, e)
 
         # 2. 指数
         self._fetch_indices(s, e)
 
-        # 3. 板块行业
+        # 3. 板块行业 (一次性)
         self._fetch_sectors(s, e)
 
-        # 4. 市场情绪
-        self._fetch_sentiment(s, e)
-
-        # 5. 宏观
+        # 4. 宏观 (一次性)
         self._fetch_macro(s, e)
+
+        # 5. 财务三表 (逐股, 慢, 按需)
+        self.fetch_financials(codes, s, e)
+
+        # 6. 扩展数据 (逐股, 慢, 按需)
+        self.fetch_extended(codes, s, e)
 
         logger.info("=== 全量抓取完成 ===")
         return True
+
+    # ---- 财务数据 (逐股, 可选) ----
+    def fetch_financials(self, codes, s, e):
+        """income, balance, cashflow, fina_indicator — 按季度，逐股拉取"""
+        ts_src = self.mgr.sources[0]
+        for method, name in [('income', '利润表'), ('balancesheet', '资产负债表'),
+                              ('cashflow', '现金流量表'), ('fina_indicator', '财务指标')]:
+            all_data = []
+            logger.info(f"  {name} ({method})...")
+            for i, code in enumerate(codes):
+                try:
+                    df = ts_src._try(method, ts_code=code, start_date=s, end_date=e)
+                    if df is not None and not df.empty:
+                        df['ts_code'] = code
+                        all_data.append(df)
+                except: pass
+                if (i+1) % 500 == 0:
+                    logger.info(f"    {i+1}/{len(codes)}")
+            if all_data:
+                pd.concat(all_data).to_csv(
+                    os.path.join(LOCAL_GLOBAL_DIR, f'{method}.csv'),
+                    index=False, encoding='utf-8-sig')
+                logger.info(f"    {name}: {len(all_data)}只有效")
+
+    # ---- 扩展数据 (逐股, 可选, 受 EXTEND_FETCH_CONFIG 控制) ----
+    def fetch_extended(self, codes, s, e):
+        """筹码/大宗/北向/概念 — 按 EXTEND_FETCH_CONFIG 开关"""
+        ts_src = self.mgr.sources[0]
+        config_map = {
+            'hk_hold': ('hk_hold', '北向资金'),
+            'cyq_chips': ('cyq_chips', '筹码分布'),
+        }
+        for cfg_key, (method, name) in config_map.items():
+            all_data = []
+            logger.info(f"  {name} ({method})...")
+            for i, code in enumerate(codes):
+                try:
+                    df = ts_src._try(method, ts_code=code, start_date=s, end_date=e)
+                    if df is not None and not df.empty:
+                        df['ts_code'] = code
+                        all_data.append(df)
+                except: pass
+                if (i+1) % 500 == 0:
+                    logger.info(f"    {i+1}/{len(codes)}")
+            if all_data:
+                pd.concat(all_data).to_csv(
+                    os.path.join(LOCAL_GLOBAL_DIR, f'{method}.csv'),
+                    index=False, encoding='utf-8-sig')
+                logger.info(f"    {name}: {len(all_data)}只有效")
 
     def fetch_incremental(self):
         latest = self._detect_latest_date()
